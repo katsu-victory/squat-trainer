@@ -2,7 +2,9 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import StickFigure from './components/StickFigure'
 import CameraView from './components/CameraView'
 import FeedbackPanel from './components/FeedbackPanel'
+import MusicPlayer from './components/MusicPlayer'
 import { useSquatAnalysis } from './hooks/useSquatAnalysis'
+import { useVoiceFeedback } from './hooks/useVoiceFeedback'
 import './App.css'
 
 function useAnimatedPhase(isAnimating, externalPhase) {
@@ -31,10 +33,12 @@ function useAnimatedPhase(isAnimating, externalPhase) {
 
 export default function App() {
   const [cameraActive, setCameraActive] = useState(false)
+  const [voiceEnabled, setVoiceEnabled] = useState(true)
   const [keypoints, setKeypoints] = useState(null)
 
   const { repCount, squatPhase, feedback, angles, resetReps } = useSquatAnalysis(keypoints)
   const displayPhase = useAnimatedPhase(!cameraActive, squatPhase)
+  useVoiceFeedback(feedback, voiceEnabled && cameraActive)
 
   const handleKeypoints = useCallback((kp) => setKeypoints(kp), [])
 
@@ -50,6 +54,13 @@ export default function App() {
             </div>
           </div>
           <div className="header-actions">
+            <button
+              className={`cam-toggle-btn ${voiceEnabled ? 'active' : ''}`}
+              onClick={() => setVoiceEnabled(v => !v)}
+              title="音声フィードバック"
+            >
+              {voiceEnabled ? '🔊 音声 ON' : '🔇 音声 OFF'}
+            </button>
             <button
               className={`cam-toggle-btn ${cameraActive ? 'active' : ''}`}
               onClick={() => setCameraActive(v => !v)}
@@ -94,6 +105,10 @@ export default function App() {
               squatPhase={squatPhase}
               onReset={resetReps}
             />
+            {/* BGM プレイヤー */}
+            <div style={{ marginTop: '12px' }}>
+              <MusicPlayer />
+            </div>
           </div>
         </section>
       </main>
