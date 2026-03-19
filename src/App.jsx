@@ -52,6 +52,7 @@ export default function App() {
   const [tempo,        setTempo]        = useState(3.0)   // 秒/回
   const [animPaused,   setAnimPaused]   = useState(false)
   const [drawMode,     setDrawMode]     = useState('stick') // stick | body | silhouette
+  const [viewAngle,    setViewAngle]    = useState('front') // front | side | diagonal
 
   const { repCount, squatPhase, feedback, angles, lastRepSec, resetReps } =
     useSquatAnalysis(keypoints)
@@ -129,27 +130,43 @@ export default function App() {
         <section className="half-panel right-panel">
           <div className="half-label model">✅ 理想フォーム</div>
 
-          {/* モード切替ボタン */}
-          <div className="figure-mode-bar">
-            {[
-              {key:'stick',      label:'棒人間'},
-              {key:'body',       label:'人体'},
-              {key:'silhouette', label:'シルエット'},
-            ].map(({key,label}) => (
-              <button
-                key={key}
-                className={`figure-mode-btn ${drawMode===key?'active':''}`}
-                onClick={() => setDrawMode(key)}
-              >{label}</button>
-            ))}
+          {/* コントロールバー：表示モード ＋ 視点切替 */}
+          <div className="figure-ctrl-bar">
+            <div className="figure-mode-bar">
+              {[
+                {key:'stick',      label:'棒人間'},
+                {key:'body',       label:'人体'},
+                {key:'silhouette', label:'シルエット'},
+              ].map(({key,label}) => (
+                <button
+                  key={key}
+                  className={`figure-mode-btn ${drawMode===key?'active':''}`}
+                  onClick={() => setDrawMode(key)}
+                >{label}</button>
+              ))}
+            </div>
+            <div className="figure-view-bar">
+              {[
+                {key:'front',    label:'正面'},
+                {key:'side',     label:'真横'},
+                {key:'diagonal', label:'斜め'},
+              ].map(({key,label}) => (
+                <button
+                  key={key}
+                  className={`figure-view-btn ${viewAngle===key?'active':''}`}
+                  onClick={() => setViewAngle(key)}
+                >{label}</button>
+              ))}
+            </div>
           </div>
 
-          {/* 3視点 棒人間（正面・真横・斜め30°） */}
+          {/* 理想フォーム：シングルビュー */}
           <div className="figure-wrap">
             <StickFigure3D
               phase={idealPhase}
               feedback={cameraActive ? feedback : []}
               drawMode={drawMode}
+              viewAngle={viewAngle}
             />
           </div>
 

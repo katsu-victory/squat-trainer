@@ -454,23 +454,40 @@ body {
   position: relative;
 }
 
-/* ===== 表示モード切替バー ===== */
-.figure-mode-bar {
+/* ===== コントロールバー外枠（モード＋視点を横並び） ===== */
+.figure-ctrl-bar {
   display: flex;
-  gap: 4px;
-  padding: 6px 10px 4px;
-  /* 半ラベル（absolute, 幅≈120px）と被らないよう右寄せ */
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
   flex-shrink: 0;
   background: rgba(2,6,23,0.6);
   border-bottom: 1px solid var(--border);
   position: relative;
   z-index: 5;
   min-height: 34px;
+  padding: 4px 10px;
+  gap: 6px;
 }
-.figure-mode-btn {
+
+/* ===== 表示モード切替バー ===== */
+.figure-mode-bar {
+  display: flex;
+  gap: 4px;
+  /* 半ラベル（absolute, 幅≈120px）を避けるため左右にパディングを取らない */
+  padding-left: 110px; /* half-label の幅分だけ右にずらす */
+}
+
+/* ===== 視点切替バー ===== */
+.figure-view-bar {
+  display: flex;
+  gap: 4px;
+}
+
+/* ===== モード・視点ボタン共通 ===== */
+.figure-mode-btn,
+.figure-view-btn {
   font-size: 11px;
-  padding: 4px 12px;
+  padding: 4px 10px;
   border-radius: 6px;
   border: 1px solid var(--border);
   background: rgba(255,255,255,0.04);
@@ -479,6 +496,7 @@ body {
   transition: all 0.18s;
   font-weight: 600;
   letter-spacing: 0.3px;
+  white-space: nowrap;
 }
 .figure-mode-btn:hover {
   color: var(--text);
@@ -490,8 +508,19 @@ body {
   border-color: var(--accent);
   color: var(--accent);
 }
+.figure-view-btn:hover {
+  color: var(--text);
+  border-color: var(--accent2);
+  background: rgba(52,211,153,0.08);
+}
+.figure-view-btn.active {
+  background: rgba(52,211,153,0.18);
+  border-color: var(--accent2);
+  color: var(--accent2);
+}
 @media (max-width: 600px) {
-  .figure-mode-btn { font-size: 10px; padding: 3px 8px; }
+  .figure-mode-btn, .figure-view-btn { font-size: 10px; padding: 3px 7px; }
+  .figure-mode-bar { padding-left: 80px; }
 }
 
 /* ===== 埋め込みHUD（右パネル下部） ===== */

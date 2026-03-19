@@ -83,31 +83,27 @@ function interpJoints(t) {
     const s = JOINTS_STAND[key], q = JOINTS_SQUAT[key]
     out[key] = [lerp(s[0],q[0],t), lerp(s[1],q[1],t), lerp(s[2],q[2],t)]
   }
-
-  // 足首は床に固定 → 足首から膝へ、膝から股関節へと順番に長さを保証
   for (const side of ['L', 'R']) {
     const ankle = `ankle${side}`, knee = `knee${side}`, hip = `hip${side}`
     fixBoneLen(out, ankle, knee, LEG_BONE_LENGTHS[`${ankle}-${knee}`])
     fixBoneLen(out, knee,  hip,  LEG_BONE_LENGTHS[`${knee}-${hip}` ])
   }
-
   return out
 }
 
-// ===== 投影 =====
+// ===== 投影定義（投影関数 + キャンバスマッピングパラメータ） =====
 const C30 = Math.cos(Math.PI/6), S30 = Math.sin(Math.PI/6)
 const VIEWS = {
-  front:    ([x,y])    => [x, y],
-  side:     ([,y,z])   => [z*2.2, y],
-  diagonal: ([x,y,z])  => [x*C30+z*S30, y],
+  front:    { label:'正面',    color:'#60a5fa', proj:([x,y])    => [x,            y], xc: 0.00, xspan: 0.65 },
+  side:     { label:'真横',    color:'#34d399', proj:([,y,z])   => [z,            y], xc: 0.05, xspan: 0.42 },
+  diagonal: { label:'斜め30°', color:'#c084fc', proj:([x,y,z])  => [x*C30+z*S30, y], xc: 0.04, xspan: 0.60 },
 }
 
-// ===== Canvas 座標変換 =====
-function makeToCanvas(sectionX, sectionW, sectionH) {
-  const XRANGE = 0.35, YPAD = 0.05
+// ===== Canvas 座標変換（ビューごとに中心・範囲を調整） =====
+function makeToCanvas(w, h, xc, xspan, ypad = 0.06) {
   return ([nx, ny]) => ({
-    cx: sectionX + (nx + XRANGE) / (XRANGE * 2) * sectionW,
-    cy: (ny + YPAD) / (1 + YPAD * 2) * sectionH,
+    cx: ((nx - xc) / xspan + 0.5) * w,
+    cy: (ny + ypad) / (1 + ypad * 2) * h,
   })
 }
 
@@ -133,7 +129,7 @@ function drawCapsule(ctx, ax, ay, bx, by, r, fill, stroke, alpha = 1) {
   ctx.restore()
 }
 
-// ===== 胴体台形 =====
+// ===== 胴体台形（正面・斜めビュー用） =====
 function drawTorso(ctx, sL, sR, hL, hR, fill, stroke, alpha = 1) {
   if (!sL||!sR||!hL||!hR) return
   ctx.save()
@@ -148,9 +144,9 @@ function drawTorso(ctx, sL, sR, hL, hR, fill, stroke, alpha = 1) {
 }
 
 // ===== 1ビュー描画（棒人間モード） =====
-function drawStickMode(ctx, pj, sectionX, sectionW, sectionH, viewLabel, viewColor, feedback) {
-  const lw = Math.max(2, sectionW/55)
-  const jr = Math.max(4, sectionW/40)
+function drawStickMode(ctx, pj, w, h, viewColor, feedback) {
+  const lw = Math.max(2, w/55)
+  const jr = Math.max(4, w/40)
 
   CONNECTIONS.forEach(([a,b]) => {
     if (!pj[a]||!pj[b]) return
@@ -174,24 +170,18 @@ function drawStickMode(ctx, pj, sectionX, sectionW, sectionH, viewLabel, viewCol
     ctx.fill()
   })
 
-  // 頭
+  // 頭（表情なし）
   const hp = pj['head']
   if (hp) {
-    const hr = Math.max(10, sectionW/20)
+    const hr = Math.max(10, w/20)
     ctx.beginPath(); ctx.arc(hp.cx, hp.cy, hr, 0, Math.PI*2)
     ctx.fillStyle = '#1e40af'; ctx.fill()
     ctx.strokeStyle = '#60a5fa'; ctx.lineWidth = lw*0.8; ctx.stroke()
-    ;[-1,1].forEach(s => {
-      ctx.beginPath(); ctx.arc(hp.cx+s*hr*0.3, hp.cy-hr*0.1, hr*0.14, 0, Math.PI*2)
-      ctx.fillStyle = '#e2e8f0'; ctx.fill()
-    })
   }
 }
 
 // ===== 1ビュー描画（人体モード） =====
-function drawBodyMode(ctx, pj, sectionW, sectionH) {
-  const h = sectionH
-  // 各部位の太さ（セクション高さに比例）
+function drawBodyMode(ctx, pj, w, h, viewName) {
   const R = {
     neck:    h * 0.022,
     upperArm:h * 0.030,
@@ -199,11 +189,10 @@ function drawBodyMode(ctx, pj, sectionW, sectionH) {
     thigh:   h * 0.042,
     shin:    h * 0.030,
     foot:    h * 0.018,
+    spine:   h * 0.052,   // 真横ビュー用の背骨カプセル半径
   }
-  // 頭
   const headR = Math.max(h * 0.068, 10)
 
-  // --- 色定義 ---
   const C = {
     bodyFillL:   'rgba(29, 78, 216, 0.82)',
     bodyFillR:   'rgba(29, 78, 216, 0.42)',
@@ -217,28 +206,38 @@ function drawBodyMode(ctx, pj, sectionW, sectionH) {
     footStrokeL: '#f59e0b',
     torsoFill:   'rgba(23, 37, 84, 0.88)',
     torsoStroke: '#60a5fa',
-    headFill:    '#1e3a8a',
-    headStroke:  '#60a5fa',
   }
 
   const g = (name) => pj[name]
+  const isSideish = viewName === 'side'
 
   // ── 奥側（右）を先に描画 ──
-  // 右腕
-  if (g('shoulderR')&&g('elbowR'))
-    drawCapsule(ctx, g('shoulderR').cx,g('shoulderR').cy, g('elbowR').cx,g('elbowR').cy, R.upperArm, C.bodyFillR, C.strokeR, 1)
-  if (g('elbowR')&&g('wristR'))
-    drawCapsule(ctx, g('elbowR').cx,g('elbowR').cy, g('wristR').cx,g('wristR').cy, R.forearm, C.bodyFillR, C.strokeR, 1)
-  // 右脚
-  if (g('hipR')&&g('kneeR'))
-    drawCapsule(ctx, g('hipR').cx,g('hipR').cy, g('kneeR').cx,g('kneeR').cy, R.thigh, C.legFillR, C.legStrokeR, 1)
-  if (g('kneeR')&&g('ankleR'))
-    drawCapsule(ctx, g('kneeR').cx,g('kneeR').cy, g('ankleR').cx,g('ankleR').cy, R.shin, C.legFillR, C.legStrokeR, 1)
-  if (g('ankleR')&&g('toeR'))
-    drawCapsule(ctx, g('ankleR').cx,g('ankleR').cy, g('toeR').cx,g('toeR').cy, R.foot, C.legFillR, C.legStrokeR, 1)
+  if (!isSideish) {
+    if (g('shoulderR')&&g('elbowR'))
+      drawCapsule(ctx, g('shoulderR').cx,g('shoulderR').cy, g('elbowR').cx,g('elbowR').cy, R.upperArm, C.bodyFillR, C.strokeR, 1)
+    if (g('elbowR')&&g('wristR'))
+      drawCapsule(ctx, g('elbowR').cx,g('elbowR').cy, g('wristR').cx,g('wristR').cy, R.forearm, C.bodyFillR, C.strokeR, 1)
+    if (g('hipR')&&g('kneeR'))
+      drawCapsule(ctx, g('hipR').cx,g('hipR').cy, g('kneeR').cx,g('kneeR').cy, R.thigh, C.legFillR, C.legStrokeR, 1)
+    if (g('kneeR')&&g('ankleR'))
+      drawCapsule(ctx, g('kneeR').cx,g('kneeR').cy, g('ankleR').cx,g('ankleR').cy, R.shin, C.legFillR, C.legStrokeR, 1)
+    if (g('ankleR')&&g('toeR'))
+      drawCapsule(ctx, g('ankleR').cx,g('ankleR').cy, g('toeR').cx,g('toeR').cy, R.foot, C.legFillR, C.legStrokeR, 1)
+  }
 
-  // ── 胴体（中央）──
-  drawTorso(ctx, g('shoulderL'),g('shoulderR'),g('hipL'),g('hipR'), C.torsoFill, C.torsoStroke, 1)
+  // ── 胴体 ──
+  if (isSideish) {
+    // 真横ビュー: 背骨カプセルで胴体を表現（台形は線になるため）
+    const neck = g('neck'), hipL = g('hipL'), hipR = g('hipR')
+    if (neck && hipL && hipR) {
+      const hx = (hipL.cx + hipR.cx) / 2
+      const hy = (hipL.cy + hipR.cy) / 2
+      drawCapsule(ctx, neck.cx, neck.cy, hx, hy, R.spine, C.torsoFill, C.torsoStroke, 1)
+    }
+  } else {
+    drawTorso(ctx, g('shoulderL'),g('shoulderR'),g('hipL'),g('hipR'), C.torsoFill, C.torsoStroke, 1)
+  }
+
   // 首
   if (g('neck')&&g('shoulderL')&&g('shoulderR')) {
     const mx = (g('shoulderL').cx+g('shoulderR').cx)/2
@@ -246,13 +245,11 @@ function drawBodyMode(ctx, pj, sectionW, sectionH) {
     drawCapsule(ctx, g('neck').cx,g('neck').cy, mx,my, R.neck, C.bodyFillL, C.strokeL, 1)
   }
 
-  // ── 手前側（左）──
-  // 左腕
+  // ── 手前側（左） ──
   if (g('shoulderL')&&g('elbowL'))
     drawCapsule(ctx, g('shoulderL').cx,g('shoulderL').cy, g('elbowL').cx,g('elbowL').cy, R.upperArm, C.bodyFillL, C.strokeL, 1)
   if (g('elbowL')&&g('wristL'))
     drawCapsule(ctx, g('elbowL').cx,g('elbowL').cy, g('wristL').cx,g('wristL').cy, R.forearm, C.bodyFillL, C.strokeL, 1)
-  // 左脚
   if (g('hipL')&&g('kneeL'))
     drawCapsule(ctx, g('hipL').cx,g('hipL').cy, g('kneeL').cx,g('kneeL').cy, R.thigh, C.legFillL, C.legStrokeL, 1)
   if (g('kneeL')&&g('ankleL'))
@@ -260,10 +257,9 @@ function drawBodyMode(ctx, pj, sectionW, sectionH) {
   if (g('ankleL')&&g('toeL'))
     drawCapsule(ctx, g('ankleL').cx,g('ankleL').cy, g('toeL').cx,g('toeL').cy, R.foot, C.footFillL, C.footStrokeL, 1)
 
-  // ── 頭 ──
+  // ── 頭（表情なし・グラデーション球） ──
   const hp = g('head')
   if (hp) {
-    // 頭部（球体っぽく）
     const grad = ctx.createRadialGradient(
       hp.cx - headR*0.3, hp.cy - headR*0.3, headR*0.1,
       hp.cx, hp.cy, headR
@@ -273,24 +269,13 @@ function drawBodyMode(ctx, pj, sectionW, sectionH) {
     ctx.beginPath(); ctx.arc(hp.cx, hp.cy, headR, 0, Math.PI*2)
     ctx.fillStyle = grad; ctx.fill()
     ctx.strokeStyle = '#60a5fa'; ctx.lineWidth = 1.5; ctx.stroke()
-
-    // 目
-    ;[-1,1].forEach(s => {
-      ctx.beginPath()
-      ctx.arc(hp.cx+s*headR*0.30, hp.cy-headR*0.12, headR*0.13, 0, Math.PI*2)
-      ctx.fillStyle = '#e2e8f0'; ctx.fill()
-    })
-    // 口
-    ctx.beginPath()
-    ctx.arc(hp.cx, hp.cy+headR*0.22, headR*0.22, 0.1*Math.PI, 0.9*Math.PI)
-    ctx.strokeStyle = '#93c5fd'; ctx.lineWidth = 1.5; ctx.stroke()
   }
 
   // ── 関節（発光点）──
   ;['kneeL','kneeR','elbowL','elbowR','hipL','hipR','ankleL','ankleR','shoulderL','shoulderR'].forEach(n => {
     if (!pj[n]) return
     const isRight = n.includes('R')
-    const r2 = Math.max(4, sectionW/48)
+    const r2 = Math.max(4, w/48)
     ctx.save()
     ctx.shadowColor = isRight ? '#7c3aed' : '#60a5fa'
     ctx.shadowBlur  = 8
@@ -301,37 +286,47 @@ function drawBodyMode(ctx, pj, sectionW, sectionH) {
 }
 
 // ===== シルエットモード =====
-function drawSilhouetteMode(ctx, pj, sectionW, sectionH) {
-  const h = sectionH
+function drawSilhouetteMode(ctx, pj, w, h, viewName) {
   const R = {
     neck: h*0.028, upperArm: h*0.036, forearm: h*0.028,
     thigh: h*0.050, shin: h*0.036, foot: h*0.022,
+    spine: h*0.060,
   }
   const headR = Math.max(h*0.072, 10)
   const fill   = 'rgba(15, 23, 42, 0.92)'
   const stroke = 'rgba(96,165,250,0.7)'
   const g = (n) => pj[n]
+  const isSideish = viewName === 'side'
 
-  const parts = [
-    // 右（後ろ）
-    ['shoulderR','elbowR',R.upperArm],['elbowR','wristR',R.forearm],
-    ['hipR','kneeR',R.thigh],['kneeR','ankleR',R.shin],['ankleR','toeR',R.foot],
-  ]
-  const partsL = [
-    ['shoulderL','elbowL',R.upperArm],['elbowL','wristL',R.forearm],
-    ['hipL','kneeL',R.thigh],['kneeL','ankleL',R.shin],['ankleL','toeL',R.foot],
-  ]
+  // 右（奥）
+  if (!isSideish) {
+    ;[['shoulderR','elbowR',R.upperArm],['elbowR','wristR',R.forearm],
+      ['hipR','kneeR',R.thigh],['kneeR','ankleR',R.shin],['ankleR','toeR',R.foot],
+    ].forEach(([a,b,r]) => {
+      if (g(a)&&g(b)) drawCapsule(ctx,g(a).cx,g(a).cy,g(b).cx,g(b).cy,r,fill,stroke,0.55)
+    })
+  }
 
-  parts.forEach(([a,b,r]) => {
-    if (g(a)&&g(b)) drawCapsule(ctx,g(a).cx,g(a).cy,g(b).cx,g(b).cy,r,fill,stroke,0.55)
-  })
   // 胴体
-  drawTorso(ctx,g('shoulderL'),g('shoulderR'),g('hipL'),g('hipR'),fill,stroke,0.85)
-  partsL.forEach(([a,b,r]) => {
+  if (isSideish) {
+    const neck = g('neck'), hipL = g('hipL'), hipR = g('hipR')
+    if (neck && hipL && hipR) {
+      const hx = (hipL.cx + hipR.cx) / 2
+      const hy = (hipL.cy + hipR.cy) / 2
+      drawCapsule(ctx, neck.cx, neck.cy, hx, hy, R.spine, fill, stroke, 0.90)
+    }
+  } else {
+    drawTorso(ctx,g('shoulderL'),g('shoulderR'),g('hipL'),g('hipR'),fill,stroke,0.85)
+  }
+
+  // 左（手前）
+  ;[['shoulderL','elbowL',R.upperArm],['elbowL','wristL',R.forearm],
+    ['hipL','kneeL',R.thigh],['kneeL','ankleL',R.shin],['ankleL','toeL',R.foot],
+  ].forEach(([a,b,r]) => {
     if (g(a)&&g(b)) drawCapsule(ctx,g(a).cx,g(a).cy,g(b).cx,g(b).cy,r,fill,stroke,1)
   })
 
-  // 頭
+  // 頭（表情なし）
   if (g('head')) {
     ctx.save()
     ctx.shadowColor = '#60a5fa'; ctx.shadowBlur = 12
@@ -357,7 +352,7 @@ function resolveJoint(text) {
   }
   return {joint:'neck', side:'right'}
 }
-function drawFeedbackAnnotations(ctx, pj, feedback, sectionX, sectionW) {
+function drawFeedbackAnnotations(ctx, pj, feedback, w) {
   const msgs = [
     ...feedback.filter(f=>f.type==='warn'||f.type==='danger'),
     ...feedback.filter(f=>f.type==='good'),
@@ -369,15 +364,15 @@ function drawFeedbackAnnotations(ctx, pj, feedback, sectionX, sectionW) {
     drawn.add(joint)
     const pt = pj[joint]; if (!pt) continue
     const isWarn    = fb.type!=='good'
-    const bubbleW   = Math.min(sectionW*0.62, 130)
+    const bubbleW   = Math.min(w*0.45, 150)
     const bubbleH   = 22
     const arrowLen  = 14
     const fillColor = isWarn?'rgba(239,68,68,0.90)':'rgba(34,197,94,0.90)'
     const lineColor = isWarn?'#ef4444':'#22c55e'
     const {cx,cy}   = pt
     const bx = side==='left'
-      ? Math.max(sectionX+2, cx-arrowLen-bubbleW)
-      : Math.min(sectionX+sectionW-bubbleW-2, cx+arrowLen)
+      ? Math.max(2, cx-arrowLen-bubbleW)
+      : Math.min(w-bubbleW-2, cx+arrowLen)
     const by = cy-bubbleH/2
     ctx.beginPath(); ctx.strokeStyle=lineColor; ctx.lineWidth=1.5
     ctx.setLineDash([3,2])
@@ -411,25 +406,21 @@ function drawFeedbackAnnotations(ctx, pj, feedback, sectionX, sectionW) {
   }
 }
 
-// ===== 1ビューのラベル・床・共通要素 =====
-function drawViewCommon(ctx, pj, sectionX, sectionW, sectionH, viewLabel, viewColor) {
-  // 床ライン
-  const toCanvas = makeToCanvas(sectionX, sectionW, sectionH)
+// ===== 床ライン＋ビューラベル =====
+function drawViewCommon(ctx, w, h, label, color, toCanvas) {
   ctx.strokeStyle = 'rgba(96,165,250,0.25)'; ctx.lineWidth=1.5
   ctx.beginPath()
-  const floorY = toCanvas([0,0.94]).cy
-  ctx.moveTo(sectionX+sectionW*0.08, floorY)
-  ctx.lineTo(sectionX+sectionW*0.92, floorY)
+  const floorY = toCanvas([0, 0.94]).cy
+  ctx.moveTo(w*0.08, floorY); ctx.lineTo(w*0.92, floorY)
   ctx.stroke()
-  // ビュー名ラベル
-  ctx.font      = `bold ${Math.max(10,sectionW/18)}px 'Segoe UI', sans-serif`
-  ctx.fillStyle = viewColor; ctx.textAlign='center'
-  ctx.fillText(viewLabel, sectionX+sectionW/2, sectionH*0.97)
+  ctx.font      = `bold ${Math.max(11, w/28)}px 'Segoe UI', sans-serif`
+  ctx.fillStyle = color; ctx.textAlign='center'
+  ctx.fillText(label, w/2, h*0.97)
   ctx.textAlign='left'
 }
 
-// ===== メイン描画 =====
-function drawAll(ctx, w, h, phase, feedback, drawMode) {
+// ===== メイン描画（シングルビュー） =====
+function drawAll(ctx, w, h, phase, feedback, drawMode, viewAngle) {
   ctx.clearRect(0,0,w,h)
   ctx.fillStyle='rgba(2,6,23,0.95)'; ctx.fillRect(0,0,w,h)
 
@@ -438,62 +429,51 @@ function drawAll(ctx, w, h, phase, feedback, drawMode) {
   for(let x=0;x<w;x+=40){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,h);ctx.stroke()}
   for(let y=0;y<h;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke()}
 
-  // セクション仕切り線
-  ctx.strokeStyle='rgba(96,165,250,0.18)'; ctx.lineWidth=1
-  const sw=w/3
-  ctx.beginPath();ctx.moveTo(sw,0);ctx.lineTo(sw,h);ctx.stroke()
-  ctx.beginPath();ctx.moveTo(sw*2,0);ctx.lineTo(sw*2,h);ctx.stroke()
-
+  const view = VIEWS[viewAngle] || VIEWS.front
   const joints = interpJoints(phase)
-  const views = [
-    {label:'正面',    color:'#60a5fa', project:VIEWS.front   },
-    {label:'真横',    color:'#34d399', project:VIEWS.side    },
-    {label:'斜め30°', color:'#c084fc', project:VIEWS.diagonal},
-  ]
+  const toCanvas = makeToCanvas(w, h, view.xc, view.xspan)
 
-  views.forEach(({label,color,project}, i) => {
-    const sx = i*sw
-    const toCanvas = makeToCanvas(sx, sw, h)
-    const pj = {}
-    for(const [name,coords] of Object.entries(joints))
-      pj[name] = toCanvas(project(coords))
+  const pj = {}
+  for (const [name, coords] of Object.entries(joints))
+    pj[name] = toCanvas(view.proj(coords))
 
-    drawViewCommon(ctx, pj, sx, sw, h, label, color)
+  drawViewCommon(ctx, w, h, view.label, view.color, toCanvas)
 
-    if (drawMode === 'body') {
-      drawBodyMode(ctx, pj, sw, h)
-    } else if (drawMode === 'silhouette') {
-      drawSilhouetteMode(ctx, pj, sw, h)
-    } else {
-      drawStickMode(ctx, pj, sx, sw, h, label, color, i===0?feedback:[])
-    }
+  if (drawMode === 'body') {
+    drawBodyMode(ctx, pj, w, h, viewAngle)
+  } else if (drawMode === 'silhouette') {
+    drawSilhouetteMode(ctx, pj, w, h, viewAngle)
+  } else {
+    drawStickMode(ctx, pj, w, h, view.color, feedback)
+  }
 
-    // フィードバック吹き出しは正面ビューのみ
-    if (i===0 && feedback && feedback.length>0) {
-      drawFeedbackAnnotations(ctx, pj, feedback, sx, sw)
-    }
-  })
+  // フィードバック吹き出し
+  if (feedback && feedback.length > 0) {
+    drawFeedbackAnnotations(ctx, pj, feedback, w)
+  }
 }
 
 // ===== React コンポーネント =====
-export default function StickFigure3D({ phase=0, feedback=[], drawMode='stick' }) {
+export default function StickFigure3D({ phase=0, feedback=[], drawMode='stick', viewAngle='front' }) {
   const canvasRef  = useRef(null)
   const phaseRef   = useRef(phase)
   const feedRef    = useRef(feedback)
   const modeRef    = useRef(drawMode)
+  const viewRef    = useRef(viewAngle)
 
-  useEffect(()=>{ phaseRef.current = phase },    [phase])
-  useEffect(()=>{ feedRef.current  = feedback }, [feedback])
-  useEffect(()=>{ modeRef.current  = drawMode }, [drawMode])
+  useEffect(()=>{ phaseRef.current = phase },     [phase])
+  useEffect(()=>{ feedRef.current  = feedback },  [feedback])
+  useEffect(()=>{ modeRef.current  = drawMode },  [drawMode])
+  useEffect(()=>{ viewRef.current  = viewAngle }, [viewAngle])
 
   useEffect(()=>{
     const canvas = canvasRef.current; if(!canvas) return
     const ctx = canvas.getContext('2d')
     const resize = ()=>{
       const rect = canvas.parentElement.getBoundingClientRect()
-      canvas.width  = rect.width  || 600
+      canvas.width  = rect.width  || 400
       canvas.height = rect.height || 400
-      drawAll(ctx, canvas.width, canvas.height, phaseRef.current, feedRef.current, modeRef.current)
+      drawAll(ctx, canvas.width, canvas.height, phaseRef.current, feedRef.current, modeRef.current, viewRef.current)
     }
     const ro = new ResizeObserver(resize)
     ro.observe(canvas.parentElement)
@@ -504,13 +484,13 @@ export default function StickFigure3D({ phase=0, feedback=[], drawMode='stick' }
   useEffect(()=>{
     const canvas = canvasRef.current; if(!canvas) return
     const ctx = canvas.getContext('2d')
-    drawAll(ctx, canvas.width, canvas.height, phase, feedback, drawMode)
-  }, [phase, feedback, drawMode])
+    drawAll(ctx, canvas.width, canvas.height, phase, feedback, drawMode, viewAngle)
+  }, [phase, feedback, drawMode, viewAngle])
 
   return (
     <canvas
       ref={canvasRef}
-      width={600}
+      width={400}
       height={400}
       style={{width:'100%', height:'100%', display:'block'}}
     />
