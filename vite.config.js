@@ -10,6 +10,6 @@ export default defineConfig({
     },
   },
   optimizeDeps: {
-    exclude: ['@tensorflow/tfjs', '@tensorflow-models/pose-detection'],
+    include: ['@tensorflow/tfjs', '@tensorflow-models/pose-detection'],
   },
 })
