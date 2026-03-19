@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
-import StickFigure from './components/StickFigure'
+import StickFigure3D from './components/StickFigure3D'
 import CameraView  from './components/CameraView'
 import MusicPlayer from './components/MusicPlayer'
 import { useSquatAnalysis }  from './hooks/useSquatAnalysis'
@@ -107,9 +107,9 @@ export default function App() {
         <section className="half-panel right-panel">
           <div className="half-label model">✅ 理想フォーム</div>
 
-          {/* 棒人間キャンバス（フィードバック吹き出し付き） */}
+          {/* 3視点 棒人間（正面・真横・斜め30°） */}
           <div className="figure-wrap">
-            <StickFigure
+            <StickFigure3D
               phase={idealPhase}
               feedback={cameraActive ? feedback : []}
             />
