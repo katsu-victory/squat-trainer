@@ -454,6 +454,46 @@ body {
   position: relative;
 }
 
+/* ===== 表示モード切替バー ===== */
+.figure-mode-bar {
+  display: flex;
+  gap: 4px;
+  padding: 6px 10px 4px;
+  /* 半ラベル（absolute, 幅≈120px）と被らないよう右寄せ */
+  justify-content: flex-end;
+  flex-shrink: 0;
+  background: rgba(2,6,23,0.6);
+  border-bottom: 1px solid var(--border);
+  position: relative;
+  z-index: 5;
+  min-height: 34px;
+}
+.figure-mode-btn {
+  font-size: 11px;
+  padding: 4px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.04);
+  color: var(--dim);
+  cursor: pointer;
+  transition: all 0.18s;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+.figure-mode-btn:hover {
+  color: var(--text);
+  border-color: var(--accent);
+  background: rgba(96,165,250,0.08);
+}
+.figure-mode-btn.active {
+  background: rgba(96,165,250,0.18);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+@media (max-width: 600px) {
+  .figure-mode-btn { font-size: 10px; padding: 3px 8px; }
+}
+
 /* ===== 埋め込みHUD（右パネル下部） ===== */
 .inline-hud {
   flex-shrink: 0;

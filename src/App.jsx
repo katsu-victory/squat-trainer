@@ -51,6 +51,7 @@ export default function App() {
   const [keypoints,    setKeypoints]    = useState(null)
   const [tempo,        setTempo]        = useState(3.0)   // 秒/回
   const [animPaused,   setAnimPaused]   = useState(false)
+  const [drawMode,     setDrawMode]     = useState('stick') // stick | body | silhouette
 
   const { repCount, squatPhase, feedback, angles, lastRepSec, resetReps } =
     useSquatAnalysis(keypoints)
@@ -128,11 +129,27 @@ export default function App() {
         <section className="half-panel right-panel">
           <div className="half-label model">✅ 理想フォーム</div>
 
+          {/* モード切替ボタン */}
+          <div className="figure-mode-bar">
+            {[
+              {key:'stick',      label:'棒人間'},
+              {key:'body',       label:'人体'},
+              {key:'silhouette', label:'シルエット'},
+            ].map(({key,label}) => (
+              <button
+                key={key}
+                className={`figure-mode-btn ${drawMode===key?'active':''}`}
+                onClick={() => setDrawMode(key)}
+              >{label}</button>
+            ))}
+          </div>
+
           {/* 3視点 棒人間（正面・真横・斜め30°） */}
           <div className="figure-wrap">
             <StickFigure3D
               phase={idealPhase}
               feedback={cameraActive ? feedback : []}
+              drawMode={drawMode}
             />
           </div>
 
