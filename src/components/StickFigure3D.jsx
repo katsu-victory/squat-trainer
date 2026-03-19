@@ -113,12 +113,21 @@ const VIEWS = {
   diagonal: { label:'斜め30°', color:'#c084fc', proj:([x,y,z])  => [x*C30+z*S30, y], xc: 0.04, xspan: 0.60 },
 }
 
-// ===== Canvas 座標変換（ビューごとに中心・範囲を調整） =====
+// ===== Canvas 座標変換（均一スケール＋中央配置で歪みを防ぐ） =====
+// x と y に同一スケールを使うことで、画面サイズによる伸縮を防ぐ
+// 戻り値: { toCanvas, figH, scale }
 function makeToCanvas(w, h, xc, xspan, ypad = 0.06) {
-  return ([nx, ny]) => ({
-    cx: ((nx - xc) / xspan + 0.5) * w,
-    cy: (ny + ypad) / (1 + ypad * 2) * h,
+  const yspan = 1.0 + ypad * 2          // 正規化 y 空間の全高
+  const scale = Math.min(w / xspan, h / yspan)  // 縦横ともにはみ出さない最大スケール
+  const figW  = xspan * scale
+  const figH  = yspan * scale
+  const ox    = (w - figW) / 2          // 水平センタリング余白
+  const oy    = (h - figH) / 2          // 垂直センタリング余白
+  const toCanvas = ([nx, ny]) => ({
+    cx: ox + ((nx - xc) / xspan + 0.5) * figW,
+    cy: oy + (ny + ypad) / yspan        * figH,
   })
+  return { toCanvas, figH, scale }
 }
 
 // ===== カプセル（丸みのある棒）描画 =====
@@ -158,9 +167,10 @@ function drawTorso(ctx, sL, sR, hL, hR, fill, stroke, alpha = 1) {
 }
 
 // ===== 1ビュー描画（棒人間モード） =====
-function drawStickMode(ctx, pj, w, h, viewColor, feedback) {
-  const lw = Math.max(2, w/55)
-  const jr = Math.max(4, w/40)
+// figH = 実際に描画される人体の高さ（px）。キャンバス高 h とは別
+function drawStickMode(ctx, pj, w, figH, viewColor, feedback) {
+  const lw = Math.max(2, figH/120)
+  const jr = Math.max(3, figH/80)
 
   CONNECTIONS.forEach(([a,b]) => {
     if (!pj[a]||!pj[b]) return
@@ -187,7 +197,7 @@ function drawStickMode(ctx, pj, w, h, viewColor, feedback) {
   // 頭（表情なし）
   const hp = pj['head']
   if (hp) {
-    const hr = Math.max(10, w/20)
+    const hr = Math.max(8, figH/22)
     ctx.beginPath(); ctx.arc(hp.cx, hp.cy, hr, 0, Math.PI*2)
     ctx.fillStyle = '#1e40af'; ctx.fill()
     ctx.strokeStyle = '#60a5fa'; ctx.lineWidth = lw*0.8; ctx.stroke()
@@ -195,17 +205,18 @@ function drawStickMode(ctx, pj, w, h, viewColor, feedback) {
 }
 
 // ===== 1ビュー描画（人体モード） =====
-function drawBodyMode(ctx, pj, w, h, viewName) {
+// figH = 実際に描画される人体の高さ（px）
+function drawBodyMode(ctx, pj, w, figH, viewName) {
   const R = {
-    neck:    h * 0.022,
-    upperArm:h * 0.030,
-    forearm: h * 0.022,
-    thigh:   h * 0.042,
-    shin:    h * 0.030,
-    foot:    h * 0.018,
-    spine:   h * 0.052,   // 真横ビュー用の背骨カプセル半径
+    neck:    figH * 0.022,
+    upperArm:figH * 0.030,
+    forearm: figH * 0.022,
+    thigh:   figH * 0.042,
+    shin:    figH * 0.030,
+    foot:    figH * 0.018,
+    spine:   figH * 0.052,   // 真横ビュー用の背骨カプセル半径
   }
-  const headR = Math.max(h * 0.068, 10)
+  const headR = Math.max(figH * 0.068, 8)
 
   const C = {
     bodyFillL:   'rgba(29, 78, 216, 0.82)',
@@ -289,7 +300,7 @@ function drawBodyMode(ctx, pj, w, h, viewName) {
   ;['kneeL','kneeR','elbowL','elbowR','hipL','hipR','ankleL','ankleR','shoulderL','shoulderR'].forEach(n => {
     if (!pj[n]) return
     const isRight = n.includes('R')
-    const r2 = Math.max(4, w/48)
+    const r2 = Math.max(3, figH/90)
     ctx.save()
     ctx.shadowColor = isRight ? '#7c3aed' : '#60a5fa'
     ctx.shadowBlur  = 8
@@ -300,13 +311,14 @@ function drawBodyMode(ctx, pj, w, h, viewName) {
 }
 
 // ===== シルエットモード =====
-function drawSilhouetteMode(ctx, pj, w, h, viewName) {
+// figH = 実際に描画される人体の高さ（px）
+function drawSilhouetteMode(ctx, pj, w, figH, viewName) {
   const R = {
-    neck: h*0.028, upperArm: h*0.036, forearm: h*0.028,
-    thigh: h*0.050, shin: h*0.036, foot: h*0.022,
-    spine: h*0.060,
+    neck: figH*0.028, upperArm: figH*0.036, forearm: figH*0.028,
+    thigh: figH*0.050, shin: figH*0.036, foot: figH*0.022,
+    spine: figH*0.060,
   }
-  const headR = Math.max(h*0.072, 10)
+  const headR = Math.max(figH*0.072, 8)
   const fill   = 'rgba(15, 23, 42, 0.92)'
   const stroke = 'rgba(96,165,250,0.7)'
   const g = (n) => pj[n]
@@ -421,15 +433,17 @@ function drawFeedbackAnnotations(ctx, pj, feedback, w) {
 }
 
 // ===== 床ライン＋ビューラベル =====
-function drawViewCommon(ctx, w, h, label, color, toCanvas) {
+function drawViewCommon(ctx, w, figH, label, color, toCanvas) {
   ctx.strokeStyle = 'rgba(96,165,250,0.25)'; ctx.lineWidth=1.5
   ctx.beginPath()
-  const floorY = toCanvas([0, 0.94]).cy
-  ctx.moveTo(w*0.08, floorY); ctx.lineTo(w*0.92, floorY)
+  const floorPt = toCanvas([0, 0.94])
+  ctx.moveTo(w*0.08, floorPt.cy); ctx.lineTo(w*0.92, floorPt.cy)
   ctx.stroke()
-  ctx.font      = `bold ${Math.max(11, w/28)}px 'Segoe UI', sans-serif`
+  ctx.font      = `bold ${Math.max(10, figH/55)}px 'Segoe UI', sans-serif`
   ctx.fillStyle = color; ctx.textAlign='center'
-  ctx.fillText(label, w/2, h*0.97)
+  // ラベルは床ラインの少し下（toCanvas で y=0.98 付近）
+  const labelPt = toCanvas([0, 0.98])
+  ctx.fillText(label, w/2, labelPt.cy)
   ctx.textAlign='left'
 }
 
@@ -445,20 +459,20 @@ function drawAll(ctx, w, h, phase, feedback, drawMode, viewAngle) {
 
   const view = VIEWS[viewAngle] || VIEWS.front
   const joints = interpJoints(phase)
-  const toCanvas = makeToCanvas(w, h, view.xc, view.xspan)
+  const { toCanvas, figH } = makeToCanvas(w, h, view.xc, view.xspan)
 
   const pj = {}
   for (const [name, coords] of Object.entries(joints))
     pj[name] = toCanvas(view.proj(coords))
 
-  drawViewCommon(ctx, w, h, view.label, view.color, toCanvas)
+  drawViewCommon(ctx, w, figH, view.label, view.color, toCanvas)
 
   if (drawMode === 'body') {
-    drawBodyMode(ctx, pj, w, h, viewAngle)
+    drawBodyMode(ctx, pj, w, figH, viewAngle)
   } else if (drawMode === 'silhouette') {
-    drawSilhouetteMode(ctx, pj, w, h, viewAngle)
+    drawSilhouetteMode(ctx, pj, w, figH, viewAngle)
   } else {
-    drawStickMode(ctx, pj, w, h, view.color, feedback)
+    drawStickMode(ctx, pj, w, figH, view.color, feedback)
   }
 
   // フィードバック吹き出し
