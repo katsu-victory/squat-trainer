@@ -50,18 +50,33 @@ const CONNECTIONS = [
 
 const lerp  = (a, b, t) => a + (b - a) * t
 
-// ===== スタンド時の骨長を事前計算（不変の基準） =====
-const LEG_BONE_LENGTHS = (() => {
+// ===== 全骨長をスタンドポーズから事前計算（アニメーション中に不変） =====
+// 修正順序（親 → 子）を定義：上半身は首起点（top-down）、脚は足首起点（bottom-up）
+const BONE_FIX_ORDER = [
+  // ── 上半身（首を根として top-down） ──
+  ['neck',      'head'     ],
+  ['neck',      'shoulderL'],
+  ['neck',      'shoulderR'],
+  ['shoulderL', 'elbowL'   ],
+  ['shoulderR', 'elbowR'   ],
+  ['elbowL',    'wristL'   ],
+  ['elbowR',    'wristR'   ],
+  // ── 脚（足首を根として bottom-up：床固定） ──
+  ['ankleL',    'kneeL'    ],
+  ['ankleR',    'kneeR'    ],
+  ['kneeL',     'hipL'     ],
+  ['kneeR',     'hipR'     ],
+  // ── つま先（足首から） ──
+  ['ankleL',    'toeL'     ],
+  ['ankleR',    'toeR'     ],
+]
+
+const BONE_LENGTHS = (() => {
   const d = {}
-  for (const side of ['L', 'R']) {
-    for (const [a, b] of [
-      [`ankle${side}`, `knee${side}`],
-      [`knee${side}`,  `hip${side}` ],
-    ]) {
-      const pa = JOINTS_STAND[a], pb = JOINTS_STAND[b]
-      const dx=pb[0]-pa[0], dy=pb[1]-pa[1], dz=pb[2]-pa[2]
-      d[`${a}-${b}`] = Math.sqrt(dx*dx + dy*dy + dz*dz)
-    }
+  for (const [a, b] of BONE_FIX_ORDER) {
+    const pa = JOINTS_STAND[a], pb = JOINTS_STAND[b]
+    const dx=pb[0]-pa[0], dy=pb[1]-pa[1], dz=pb[2]-pa[2]
+    d[`${a}>${b}`] = Math.sqrt(dx*dx + dy*dy + dz*dz)
   }
   return d
 })()
@@ -76,17 +91,16 @@ function fixBoneLen(joints, parentKey, childKey, targetLen) {
   joints[childKey] = [p[0]+dx*s, p[1]+dy*s, p[2]+dz*s]
 }
 
-// ===== 関節補間 + 脚の骨長を正規化 =====
+// ===== 関節補間 + 全骨の長さを正規化 =====
 function interpJoints(t) {
   const out = {}
   for (const key of Object.keys(JOINTS_STAND)) {
     const s = JOINTS_STAND[key], q = JOINTS_SQUAT[key]
     out[key] = [lerp(s[0],q[0],t), lerp(s[1],q[1],t), lerp(s[2],q[2],t)]
   }
-  for (const side of ['L', 'R']) {
-    const ankle = `ankle${side}`, knee = `knee${side}`, hip = `hip${side}`
-    fixBoneLen(out, ankle, knee, LEG_BONE_LENGTHS[`${ankle}-${knee}`])
-    fixBoneLen(out, knee,  hip,  LEG_BONE_LENGTHS[`${knee}-${hip}` ])
+  // 全骨に対して長さを固定（定義された順序で適用）
+  for (const [a, b] of BONE_FIX_ORDER) {
+    fixBoneLen(out, a, b, BONE_LENGTHS[`${a}>${b}`])
   }
   return out
 }
