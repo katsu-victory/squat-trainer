@@ -18,8 +18,8 @@ const CONNECTIONS = [
 
 // 仮想空間グリッドを描画
 function drawVirtualBg(ctx, w, h) {
-  // ベース: 半透明ダーク
-  ctx.fillStyle = 'rgba(2, 6, 23, 0.55)'
+  // ベース: 軽い暗幕（カメラ映像を見やすく保つ）
+  ctx.fillStyle = 'rgba(2, 6, 23, 0.20)'
   ctx.fillRect(0, 0, w, h)
 
   // グリッドライン
@@ -50,8 +50,10 @@ export default function CameraView({ onKeypoints, isActive }) {
 
   const { keypoints, isModelReady } = usePoseDetection(videoRef, isActive && camReady)
 
-  // キーポイントを親に渡す
+  // ref で最新キーポイントを保持（アニメーションループを再起動させない）
+  const keypointsRef = useRef(null)
   useEffect(() => {
+    keypointsRef.current = keypoints
     if (onKeypoints) onKeypoints(keypoints)
   }, [keypoints, onKeypoints])
 
@@ -122,16 +124,15 @@ export default function CameraView({ onKeypoints, isActive }) {
         // ③ 仮想空間グリッドをオーバーレイ（multiply で自然に馴染む）
         drawVirtualBg(ctx, cw, ch)
 
-        // ④ 骨格を描画（キャンバスと同じ座標系）
-        if (keypoints) {
-          // cover モードでのスケール・オフセットを計算
-          const skSx = (x) => cw - (x * scale + ox)   // ミラー
+        // ④ 骨格を描画（refから最新キーポイントを取得）
+        const kps = keypointsRef.current
+        if (kps) {
+          const skSx = (x) => cw - (x * scale + ox)
           const skSy = (y) =>       y * scale + oy
 
-          // ライン
           CONNECTIONS.forEach(([i, j]) => {
-            const a = getKP(keypoints, i, 0.3)
-            const b = getKP(keypoints, j, 0.3)
+            const a = getKP(kps, i, 0.3)
+            const b = getKP(kps, j, 0.3)
             if (!a || !b) return
             ctx.beginPath()
             ctx.moveTo(skSx(a.x), skSy(a.y))
@@ -142,10 +143,9 @@ export default function CameraView({ onKeypoints, isActive }) {
             ctx.stroke()
           })
 
-          // 関節点
           const LEG_KP = [KP.LEFT_HIP, KP.RIGHT_HIP, KP.LEFT_KNEE,
                           KP.RIGHT_KNEE, KP.LEFT_ANKLE, KP.RIGHT_ANKLE]
-          keypoints.forEach((kp, i) => {
+          kps.forEach((kp, i) => {
             if (!kp || kp.score < 0.3) return
             const isLeg = LEG_KP.includes(i)
             ctx.beginPath()
@@ -154,10 +154,9 @@ export default function CameraView({ onKeypoints, isActive }) {
             ctx.fill()
           })
 
-          // 膝の角度ラベル
-          const lHip   = getKP(keypoints, KP.LEFT_HIP,   0.3)
-          const lKnee  = getKP(keypoints, KP.LEFT_KNEE,  0.3)
-          const lAnkle = getKP(keypoints, KP.LEFT_ANKLE, 0.3)
+          const lHip   = getKP(kps, KP.LEFT_HIP,   0.3)
+          const lKnee  = getKP(kps, KP.LEFT_KNEE,  0.3)
+          const lAnkle = getKP(kps, KP.LEFT_ANKLE, 0.3)
           if (lHip && lKnee && lAnkle) {
             const angle = calcAngle(lHip, lKnee, lAnkle)
             if (angle !== null) {
@@ -198,7 +197,7 @@ export default function CameraView({ onKeypoints, isActive }) {
       cancelAnimationFrame(rafRef.current)
       ro.disconnect()
     }
-  }, [camReady, keypoints])
+  }, [camReady])  // keypoints は ref 経由で読む（依存配列に入れるとループが毎フレーム再起動してちらつく）
 
   // プレースホルダー（カメラOFF）
   if (!isActive) {
