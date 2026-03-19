@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import StickFigure from './components/StickFigure'
+import UserStickFigure from './components/UserStickFigure'
 import CameraView from './components/CameraView'
 import FeedbackPanel from './components/FeedbackPanel'
 import MusicPlayer from './components/MusicPlayer'
@@ -82,15 +83,37 @@ export default function App() {
         </section>
 
         <section className="panel figure-panel">
-          <div className="panel-header">
-            <span className="panel-badge model">正しいフォーム</span>
-          </div>
-          <div className="panel-body figure-body">
-            <StickFigure phase={displayPhase} />
-            <div className="phase-hint">
-              {cameraActive ? 'あなたの動きを反映中' : 'デモアニメーション（カメラONで連動）'}
-            </div>
-          </div>
+          {cameraActive ? (
+            /* カメラON: 上段=あなたの棒人間、下段=理想フォーム */
+            <>
+              <div className="panel-header">
+                <span className="panel-badge user">あなたの骨格</span>
+                <span className="panel-badge model" style={{ marginLeft: 6 }}>正しいフォーム</span>
+              </div>
+              <div className="panel-body figure-split">
+                <div className="figure-half">
+                  <div className="figure-half-label">📹 あなた</div>
+                  <UserStickFigure keypoints={keypoints} />
+                </div>
+                <div className="figure-divider" />
+                <div className="figure-half">
+                  <div className="figure-half-label">✅ 理想</div>
+                  <StickFigure phase={displayPhase} />
+                </div>
+              </div>
+            </>
+          ) : (
+            /* カメラOFF: 理想フォームのデモアニメーション */
+            <>
+              <div className="panel-header">
+                <span className="panel-badge model">正しいフォーム（デモ）</span>
+              </div>
+              <div className="panel-body figure-body">
+                <StickFigure phase={displayPhase} />
+                <div className="phase-hint">カメラONであなたの骨格と並べて比較できます</div>
+              </div>
+            </>
+          )}
         </section>
 
         <section className="panel feedback-col">
