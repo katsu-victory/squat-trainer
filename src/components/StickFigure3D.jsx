@@ -49,12 +49,48 @@ const CONNECTIONS = [
 ]
 
 const lerp  = (a, b, t) => a + (b - a) * t
+
+// ===== スタンド時の骨長を事前計算（不変の基準） =====
+const LEG_BONE_LENGTHS = (() => {
+  const d = {}
+  for (const side of ['L', 'R']) {
+    for (const [a, b] of [
+      [`ankle${side}`, `knee${side}`],
+      [`knee${side}`,  `hip${side}` ],
+    ]) {
+      const pa = JOINTS_STAND[a], pb = JOINTS_STAND[b]
+      const dx=pb[0]-pa[0], dy=pb[1]-pa[1], dz=pb[2]-pa[2]
+      d[`${a}-${b}`] = Math.sqrt(dx*dx + dy*dy + dz*dz)
+    }
+  }
+  return d
+})()
+
+// ===== ベクトルを指定長にリスケール（親→子の方向を保ちつつ長さ固定） =====
+function fixBoneLen(joints, parentKey, childKey, targetLen) {
+  const p = joints[parentKey], c = joints[childKey]
+  const dx=c[0]-p[0], dy=c[1]-p[1], dz=c[2]-p[2]
+  const len = Math.sqrt(dx*dx + dy*dy + dz*dz)
+  if (len < 1e-6) return
+  const s = targetLen / len
+  joints[childKey] = [p[0]+dx*s, p[1]+dy*s, p[2]+dz*s]
+}
+
+// ===== 関節補間 + 脚の骨長を正規化 =====
 function interpJoints(t) {
   const out = {}
   for (const key of Object.keys(JOINTS_STAND)) {
     const s = JOINTS_STAND[key], q = JOINTS_SQUAT[key]
     out[key] = [lerp(s[0],q[0],t), lerp(s[1],q[1],t), lerp(s[2],q[2],t)]
   }
+
+  // 足首は床に固定 → 足首から膝へ、膝から股関節へと順番に長さを保証
+  for (const side of ['L', 'R']) {
+    const ankle = `ankle${side}`, knee = `knee${side}`, hip = `hip${side}`
+    fixBoneLen(out, ankle, knee, LEG_BONE_LENGTHS[`${ankle}-${knee}`])
+    fixBoneLen(out, knee,  hip,  LEG_BONE_LENGTHS[`${knee}-${hip}` ])
+  }
+
   return out
 }
 
