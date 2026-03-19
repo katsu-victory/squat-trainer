@@ -1,6 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import StickFigure from './components/StickFigure'
-import UserStickFigure from './components/UserStickFigure'
 import CameraView from './components/CameraView'
 import FeedbackPanel from './components/FeedbackPanel'
 import MusicPlayer from './components/MusicPlayer'
@@ -8,28 +7,26 @@ import { useSquatAnalysis } from './hooks/useSquatAnalysis'
 import { useVoiceFeedback } from './hooks/useVoiceFeedback'
 import './App.css'
 
-function useAnimatedPhase(isAnimating, externalPhase) {
-  const [animPhase, setAnimPhase] = useState(0)
+// 理想フォームを常にループアニメーションするフック
+function useIdealAnimation() {
+  const [idealPhase, setIdealPhase] = useState(0)
   const frameRef = useRef(null)
   const startRef = useRef(null)
 
   useEffect(() => {
-    if (!isAnimating) {
-      cancelAnimationFrame(frameRef.current)
-      return
-    }
     const loop = (ts) => {
       if (!startRef.current) startRef.current = ts
       const elapsed = (ts - startRef.current) / 1000
+      // 3秒周期でスタンディング↔スクワットを繰り返す
       const t = (Math.sin((elapsed * 2 * Math.PI) / 3 - Math.PI / 2) + 1) / 2
-      setAnimPhase(t)
+      setIdealPhase(t)
       frameRef.current = requestAnimationFrame(loop)
     }
     frameRef.current = requestAnimationFrame(loop)
     return () => cancelAnimationFrame(frameRef.current)
-  }, [isAnimating])
+  }, [])
 
-  return isAnimating ? animPhase : externalPhase
+  return idealPhase
 }
 
 export default function App() {
@@ -38,7 +35,7 @@ export default function App() {
   const [keypoints, setKeypoints] = useState(null)
 
   const { repCount, squatPhase, feedback, angles, resetReps } = useSquatAnalysis(keypoints)
-  const displayPhase = useAnimatedPhase(!cameraActive, squatPhase)
+  const idealPhase = useIdealAnimation()   // 常時ループ（ユーザーの動きとは独立）
   useVoiceFeedback(feedback, voiceEnabled && cameraActive)
 
   const handleKeypoints = useCallback((kp) => setKeypoints(kp), [])
@@ -58,67 +55,57 @@ export default function App() {
             <button
               className={`cam-toggle-btn ${voiceEnabled ? 'active' : ''}`}
               onClick={() => setVoiceEnabled(v => !v)}
-              title="音声フィードバック"
+              title="音声フィードバック切替"
             >
-              {voiceEnabled ? '🔊 音声 ON' : '🔇 音声 OFF'}
+              {voiceEnabled ? '🔊 音声ON' : '🔇 音声OFF'}
             </button>
             <button
               className={`cam-toggle-btn ${cameraActive ? 'active' : ''}`}
               onClick={() => setCameraActive(v => !v)}
             >
-              {cameraActive ? '📷 カメラ OFF' : '📷 カメラ ON'}
+              {cameraActive ? '📷 カメラOFF' : '📷 カメラON'}
             </button>
           </div>
         </div>
       </header>
 
       <main className="main-layout">
+
+        {/* ① カメラ映像 ＋ 骨格オーバーレイ（あなたのフォーム） */}
         <section className="panel camera-panel">
           <div className="panel-header">
-            <span className="panel-badge user">あなたのフォーム</span>
+            <span className="panel-badge user">📹 あなたのフォーム</span>
           </div>
           <div className="panel-body">
             <CameraView onKeypoints={handleKeypoints} isActive={cameraActive} />
           </div>
         </section>
 
+        {/* ② 理想の棒人間（常時ループアニメーション） */}
         <section className="panel figure-panel">
-          {cameraActive ? (
-            /* カメラON: 上段=あなたの棒人間、下段=理想フォーム */
-            <>
-              <div className="panel-header">
-                <span className="panel-badge user">あなたの骨格</span>
-                <span className="panel-badge model" style={{ marginLeft: 6 }}>正しいフォーム</span>
+          <div className="panel-header">
+            <span className="panel-badge model">✅ 理想フォーム（手本）</span>
+            {cameraActive && squatPhase > 0.1 && (
+              <span className="phase-live">
+                あなた: {Math.round(squatPhase * 100)}%
+              </span>
+            )}
+          </div>
+          <div className="panel-body figure-body">
+            {/* 理想の棒人間は常に独自アニメーション */}
+            <StickFigure phase={idealPhase} />
+            {!cameraActive && (
+              <div className="phase-hint">
+                カメラをONにして骨格解析を開始しよう
               </div>
-              <div className="panel-body figure-split">
-                <div className="figure-half">
-                  <div className="figure-half-label">📹 あなた</div>
-                  <UserStickFigure keypoints={keypoints} />
-                </div>
-                <div className="figure-divider" />
-                <div className="figure-half">
-                  <div className="figure-half-label">✅ 理想</div>
-                  <StickFigure phase={displayPhase} />
-                </div>
-              </div>
-            </>
-          ) : (
-            /* カメラOFF: 理想フォームのデモアニメーション */
-            <>
-              <div className="panel-header">
-                <span className="panel-badge model">正しいフォーム（デモ）</span>
-              </div>
-              <div className="panel-body figure-body">
-                <StickFigure phase={displayPhase} />
-                <div className="phase-hint">カメラONであなたの骨格と並べて比較できます</div>
-              </div>
-            </>
-          )}
+            )}
+          </div>
         </section>
 
+        {/* ③ フィードバックパネル */}
         <section className="panel feedback-col">
           <div className="panel-header">
-            <span className="panel-badge feedback">フィードバック</span>
+            <span className="panel-badge feedback">📊 フィードバック</span>
           </div>
           <div className="panel-body">
             <FeedbackPanel
@@ -128,18 +115,18 @@ export default function App() {
               squatPhase={squatPhase}
               onReset={resetReps}
             />
-            {/* BGM プレイヤー */}
             <div style={{ marginTop: '12px' }}>
               <MusicPlayer />
             </div>
           </div>
         </section>
+
       </main>
 
       <footer className="app-footer">
         <span className={`status-dot ${cameraActive ? 'active' : ''}`} />
         {cameraActive
-          ? 'カメラ稼働中 — TensorFlow.js MoveNet でリアルタイム解析'
+          ? `AI解析中 — レップ: ${repCount}回 / ${voiceEnabled ? '音声ON' : '音声OFF'}`
           : 'カメラをONにして自分のスクワットフォームをチェックしよう'}
       </footer>
     </div>
