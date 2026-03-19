@@ -6,16 +6,28 @@ import { useSquatAnalysis }  from './hooks/useSquatAnalysis'
 import { useVoiceFeedback }  from './hooks/useVoiceFeedback'
 import './App.css'
 
-// 理想フォームを常にループアニメーション
-function useIdealAnimation() {
+// 理想フォームアニメーション（速度・一時停止を制御可能）
+function useIdealAnimation(secPerRep = 3, paused = false) {
   const [phase, setPhase] = useState(0)
   const rafRef   = useRef(null)
   const startRef = useRef(null)
+  const secRef   = useRef(secPerRep)
+  const pauseRef = useRef(paused)
+
+  useEffect(() => { secRef.current  = secPerRep }, [secPerRep])
+  useEffect(() => { pauseRef.current = paused    }, [paused])
+
   useEffect(() => {
     const loop = (ts) => {
-      if (!startRef.current) startRef.current = ts
-      const t = (Math.sin(((ts - startRef.current) / 1000) * (2 * Math.PI / 3) - Math.PI / 2) + 1) / 2
-      setPhase(t)
+      if (!pauseRef.current) {
+        if (!startRef.current) startRef.current = ts
+        const elapsed = (ts - startRef.current) / 1000
+        const t = (Math.sin((elapsed / secRef.current) * Math.PI * 2 - Math.PI / 2) + 1) / 2
+        setPhase(t)
+      } else {
+        // 一時停止中はstartをずらして再開時に位置を保持
+        startRef.current = null
+      }
       rafRef.current = requestAnimationFrame(loop)
     }
     rafRef.current = requestAnimationFrame(loop)
@@ -37,13 +49,22 @@ export default function App() {
   const [cameraActive, setCameraActive] = useState(false)
   const [voiceEnabled, setVoiceEnabled] = useState(true)
   const [keypoints,    setKeypoints]    = useState(null)
+  const [tempo,        setTempo]        = useState(3.0)   // 秒/回
+  const [animPaused,   setAnimPaused]   = useState(false)
 
-  const { repCount, squatPhase, feedback, angles, resetReps } =
+  const { repCount, squatPhase, feedback, angles, lastRepSec, resetReps } =
     useSquatAnalysis(keypoints)
-  const idealPhase = useIdealAnimation()
+  const idealPhase = useIdealAnimation(tempo, animPaused)
   useVoiceFeedback(feedback, voiceEnabled && cameraActive)
 
   const handleKeypoints = useCallback((kp) => setKeypoints(kp), [])
+
+  // ユーザーの直近ペースに合わせる
+  const syncTempo = useCallback(() => {
+    if (lastRepSec && lastRepSec > 0.5 && lastRepSec < 15) {
+      setTempo(parseFloat(lastRepSec.toFixed(1)))
+    }
+  }, [lastRepSec])
 
   // HUD フィードバックテキスト（先頭1件）
   const topFb = feedback[0] ?? null
@@ -153,18 +174,17 @@ export default function App() {
             {/* フィードバックテキスト */}
             <div className={`hud-fb ${fbClass}`}>{fbText}</div>
 
-            {/* 深度バー ＋ リセット */}
+            {/* 深度バー ＋ テンポ ＋ リセット */}
             <div className="hud-right-ctrl">
+
+              {/* 深度バー（カメラON時のみ） */}
               {cameraActive && (
                 <div className="hud-depth">
                   <span className="hud-depth-lbl">深度</span>
                   <div className="hud-depth-track">
                     <div
                       className="hud-depth-fill"
-                      style={{
-                        width: `${Math.round(squatPhase * 100)}%`,
-                        background: depthColor,
-                      }}
+                      style={{ width: `${Math.round(squatPhase * 100)}%`, background: depthColor }}
                     />
                   </div>
                   <span className="hud-depth-pct" style={{ color: depthColor }}>
@@ -172,9 +192,34 @@ export default function App() {
                   </span>
                 </div>
               )}
-              <button className="hud-reset-btn" onClick={resetReps}>
-                リセット
-              </button>
+
+              {/* テンポコントロール */}
+              <div className="hud-tempo">
+                <span className="hud-tempo-lbl">⏱</span>
+                <button
+                  className="tempo-btn"
+                  onClick={() => setTempo(t => parseFloat(Math.max(1.0, t - 0.5).toFixed(1)))}
+                >－</button>
+                <span className="hud-tempo-val">{tempo.toFixed(1)}s/回</span>
+                <button
+                  className="tempo-btn"
+                  onClick={() => setTempo(t => parseFloat(Math.min(10.0, t + 0.5).toFixed(1)))}
+                >＋</button>
+                <button
+                  className={`tempo-pause-btn ${animPaused ? 'paused' : ''}`}
+                  onClick={() => setAnimPaused(p => !p)}
+                  title={animPaused ? '再生' : '一時停止'}
+                >{animPaused ? '▶' : '⏸'}</button>
+                {cameraActive && lastRepSec && (
+                  <button
+                    className="tempo-sync-btn"
+                    onClick={syncTempo}
+                    title={`直近ペース ${lastRepSec}s/回 に合わせる`}
+                  >🔄 同期</button>
+                )}
+              </div>
+
+              <button className="hud-reset-btn" onClick={resetReps}>リセット</button>
             </div>
 
           </div>{/* /inline-hud */}

@@ -13,12 +13,18 @@ const THRESHOLDS = {
 // States for rep counting
 const SQUAT_STATE = { UP: 'up', DOWN: 'down' }
 
+// カウント閾値（ヒステリシスで誤カウントを防ぐ）
+const DOWN_THRESHOLD = 105  // この角度より小さくなったら「しゃがんだ」と判定
+const UP_THRESHOLD   = 158  // この角度より大きくなったら「立った」と判定 → 1回カウント
+
 export function useSquatAnalysis(keypoints) {
   const [repCount, setRepCount] = useState(0)
   const [squatPhase, setSquatPhase] = useState(0)        // 0=standing, 1=squat
   const [feedback, setFeedback] = useState([])
   const [angles, setAngles] = useState({})
+  const [lastRepSec, setLastRepSec] = useState(null)     // 直近1回にかかった秒数
   const stateRef = useRef(SQUAT_STATE.UP)
+  const downAtRef = useRef(null)                         // しゃがんだ時刻
   const phaseHistoryRef = useRef([])
 
   useEffect(() => {
@@ -71,16 +77,24 @@ export function useSquatAnalysis(keypoints) {
     const smoothPhase = phaseHistoryRef.current.reduce((a, b) => a + b, 0) / phaseHistoryRef.current.length
     setSquatPhase(smoothPhase)
 
-    // --- Rep counting ---
+    // --- Rep counting（ヒステリシス付き: しゃがみ→立ち上がりで1回）---
     if (kneeAngle !== null) {
-      const wasUp = stateRef.current === SQUAT_STATE.UP
-      const isDown = kneeAngle < 115
+      const isUp   = stateRef.current === SQUAT_STATE.UP
+      const isDown = stateRef.current === SQUAT_STATE.DOWN
 
-      if (wasUp && isDown) {
+      if (isUp && kneeAngle < DOWN_THRESHOLD) {
+        // 立っていた → しゃがんだ
         stateRef.current = SQUAT_STATE.DOWN
-      } else if (!wasUp && kneeAngle > 155) {
+        downAtRef.current = Date.now()
+      } else if (isDown && kneeAngle > UP_THRESHOLD) {
+        // しゃがんでいた → 立ち上がった → 1回カウント
         stateRef.current = SQUAT_STATE.UP
         setRepCount(c => c + 1)
+        if (downAtRef.current) {
+          const elapsed = (Date.now() - downAtRef.current) / 1000
+          setLastRepSec(parseFloat(elapsed.toFixed(1)))
+          downAtRef.current = null
+        }
       }
     }
 
@@ -121,7 +135,12 @@ export function useSquatAnalysis(keypoints) {
     setFeedback(msgs)
   }, [keypoints])
 
-  const resetReps = () => setRepCount(0)
+  const resetReps = () => {
+    setRepCount(0)
+    setLastRepSec(null)
+    stateRef.current = SQUAT_STATE.UP
+    downAtRef.current = null
+  }
 
-  return { repCount, squatPhase, feedback, angles, resetReps }
+  return { repCount, squatPhase, feedback, angles, lastRepSec, resetReps }
 }
